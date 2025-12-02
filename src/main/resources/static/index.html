@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Facturación - Productos</title>
+    <!-- Tailwind CSS para el diseño -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Incluimos Lucide Icons para un diseño más profesional -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        /* Estilos base con fondo de patrón sutil */
+        body {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            background-color: #f7fafc; /* Color de fondo muy claro */
+            background-image: radial-gradient(#d1d5db 1px, transparent 0);
+            background-size: 40px 40px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .container-wrapper {
+            max-width: 900px;
+            width: 100%;
+        }
+        .main-card {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 1.5rem; /* Esquinas más redondeadas */
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); /* Sombra más profunda */
+            border: 1px solid #e5e7eb;
+        }
+        /* Estilos para el efecto de pestaña activa */
+        .nav-button {
+            transition: all 0.3s ease;
+            position: relative;
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            color: #4b5563;
+        }
+        .nav-button:hover:not(.active) {
+            background-color: #f0fdfa; /* Verde azulado muy claro al pasar el ratón */
+            color: #0f766e;
+        }
+        .nav-button.active {
+            background-color: #14b8a6; /* Teal 500 */
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 6px -1px rgba(20, 184, 166, 0.3);
+        }
+        /* Estilo para el botón de facturación */
+        .nav-button.facturacion.active {
+            background-color: #3b82f6; /* Blue 500 */
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        .nav-button.facturacion:hover:not(.active) {
+            color: #3b82f6;
+            background-color: #eff6ff; /* Blue muy claro */
+        }
+        /* Efecto de campo de formulario */
+        input:focus, textarea:focus {
+            --tw-ring-opacity: 1;
+            box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.4);
+            border-color: #14b8a6;
+        }
+        .facturacion-card input:focus, .facturacion-card select:focus {
+            --tw-ring-opacity: 1;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4); /* Anillo azul */
+            border-color: #3b82f6; /* Borde azul */
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container" class="container-wrapper">
+    <!-- Contenido de la aplicación (Login o Panel) -->
+</div>
+
+<script>
+    // ------------------- CONFIGURACIÓN Y ESTADO GLOBAL -------------------
+    const API_BASE_URL = 'http://localhost:8080/api';
+    const APP_CONTAINER = document.getElementById('app-container');
+    let currentView = 'facturacion'; // Establece facturacion como vista inicial al iniciar sesión
+
+    // Estado de Facturación
+    let currentCliente = null;
+    let detallesFactura = [];
+
+    // ------------------- UTILIDADES -------------------
+    const getToken = () => localStorage.getItem('authToken');
+
+    const showMessage = (text, type = 'error') => {
+        const messageEl = document.getElementById('message-box');
+        if (messageEl) {
+            messageEl.innerHTML = text;
+            messageEl.className = `text-center p-3 mb-6 rounded-xl text-sm font-semibold transition-all duration-300 ${
+                type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'
+            }`;
+        }
+    };
+
+    const logout = () => {
+        localStorage.removeItem('authToken');
+        renderLogin();
+        showMessage('Sesión cerrada. Inicie sesión para continuar.', 'success');
+    };
+
+    const navigateTo = (view) => {
+        currentView = view;
+        renderProtectedView();
+    };
+
+    // ------------------- 1. LÓGICA DE AUTENTICACIÓN -------------------
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const loginBtn = document.getElementById('login-btn');
+
+        loginBtn.disabled = true;
+        // Indicador de carga para el botón de login
+        loginBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Conectando...';
+        showMessage('', 'success');
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ correo: email, password: password }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Fallo de Login: ${response.status}. ${errorText || 'Credenciales inválidas.'}`);
+            }
+
+            const data = await response.json();
+
+            localStorage.setItem('authToken', data.token);
+            showMessage('¡Inicio de sesión exitoso! Cargando panel...', 'success');
+            // Inicializa los iconos de Lucide después del render
+            setTimeout(() => lucide.createIcons(), 0);
+            renderProtectedView();
+
+        } catch (error) {
+            console.error('Error de Conexión:', error);
+            showMessage(`Error: ${error.message}`, 'error');
+        } finally {
+            loginBtn.innerHTML = 'Iniciar Sesión';
+            loginBtn.disabled = false;
+        }
+    };
+
+    // ------------------- 2. LÓGICA DE PRODUCTOS -------------------
+
+    const fetchProducts = async (token) => {
+        const listContainer = document.getElementById('products-list');
+        if (!listContainer) return;
+
+        // Indicador de carga para la lista de productos
+        listContainer.innerHTML = '<div class="text-center p-8 text-gray-400"><svg class="animate-spin h-6 w-6 mx-auto text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p class="mt-2">Cargando datos...</p></div>';
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/productos`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+            });
+
+            if (response.status === 401 || response.status === 403) {
+                 throw new Error(`Token expirado o Acceso Denegado. Status: ${response.status}`);
+            }
+            if (!response.ok) {
+                throw new Error(`Error al cargar datos. Status: ${response.status}`);
+            }
+
+            const products = await response.json();
+            renderProductsList(products, listContainer);
+            showMessage('Datos de productos cargados correctamente.', 'success');
+            // Inicializa los iconos de Lucide después del render
+            setTimeout(() => lucide.createIcons(), 0);
+
+        } catch (error) {
+            console.error('Error al cargar productos:', error);
+            showMessage(`Error: ${error.message}`, 'error');
+            logout(); // Redirige al login si falla la autorización
+        }
+    };
+
+    const handleCreateProduct = async (e) => {
+        e.preventDefault();
+        const token = getToken();
+        const form = e.target;
+        const submitBtn = document.getElementById('create-btn');
+
+        const newProduct = {
+            nombre: form.nombre.value,
+            descripcion: form.descripcion.value,
+            precio: parseFloat(form.precio.value),
+            stock: parseInt(form.stock.value),
+        };
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Guardando...';
+        showMessage('', 'success');
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/productos`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newProduct),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Fallo al crear producto: ${response.status}. ${errorText || 'Error desconocido.'}`);
+            }
+
+            form.reset();
+            showMessage(`Producto "${newProduct.nombre}" creado exitosamente.`, 'success');
+
+            // Redirige a la lista después de un breve retraso
+            setTimeout(() => navigateTo('listProducts'), 1500);
+
+        } catch (error) {
+            console.error('Error al crear producto:', error);
+            showMessage(`Error: ${error.message}`, 'error');
+        } finally {
+            submitBtn.innerHTML = '<i data-lucide="save" class="w-5 h-5 mr-2"></i> Crear Producto';
+            submitBtn.disabled = false;
+            // Vuelve a crear el icono de guardar si la operación termina rápido
+            setTimeout(() => lucide.createIcons(), 0);
+        }
+    };
+
+    // ------------------- 3. LÓGICA DE FACTURACIÓN -------------------
+
+    const consultarCliente = async () => {
+        const documentoInput = document.getElementById('documento-input');
+        const documento = documentoInput.value.trim();
+        const clienteResultadoDiv = document.getElementById('cliente-resultado');
+        const facturacionCard = document.getElementById('facturacion-card');
+
+        if (documento.length !== 8 && documento.length !== 11) {
+            showMessage('El documento debe tener 8 (DNI) o 11 (RUC) dígitos.', 'error');
+            return;
+        }
+
+        clienteResultadoDiv.innerHTML = '<p class="text-center text-blue-500 font-medium">Consultando cliente...</p>';
+
+        try {
+            // Este endpoint NO requiere token JWT (lo hicimos público en SecurityConfig.java)
+            const response = await fetch(`${API_BASE_URL}/facturas/cliente/${documento}`);
+            const data = await response.json();
+
+            if (response.ok) {
+                currentCliente = data;
+                document.getElementById('cliente-id-display').value = data.id; // Actualiza el ID en el formulario
+
+                clienteResultadoDiv.innerHTML = `
+                    <p class="font-semibold text-green-700 flex items-center mb-2"><i data-lucide="check-circle" class="w-4 h-4 mr-2"></i> Cliente encontrado y listo:</p>
+                    <p class="ml-6 text-sm"><strong>ID:</strong> ${data.id}</p>
+                    <p class="ml-6 text-sm"><strong>Doc/RUC:</strong> ${data.documentoIdentidad} (${data.tipoDocumento})</p>
+                    <p class="ml-6 text-sm"><strong>Nombre:</strong> ${data.nombreRazonSocial}</p>
+                `;
+
+                facturacionCard.classList.remove('opacity-50', 'pointer-events-none');
+                showMessage(`Cliente ID ${data.id} consultado y habilitado para facturar.`, 'success');
+            } else {
+                clienteResultadoDiv.innerHTML = `<p class="font-semibold text-red-600">Error en la consulta:</p><p class="text-sm">${data.message || JSON.stringify(data)}</p>`;
+                facturacionCard.classList.add('opacity-50', 'pointer-events-none');
+                currentCliente = null;
+                document.getElementById('cliente-id-display').value = 'N/A'; // Limpia el ID
+                showMessage('Error al consultar cliente.', 'error');
+            }
+
+        } catch (error) {
+            console.error('Error de red o CORS:', error);
+            clienteResultadoDiv.innerHTML = `<p class="font-semibold text-red-600">Error de red.</p>`;
+            showMessage('Error de red. Asegúrate de que tu Spring Boot esté corriendo.', 'error');
+        } finally {
+             setTimeout(() => lucide.createIcons(), 0);
+        }
+    };
+
+    const agregarDetalle = () => {
+        const productoIdInput = document.getElementById('producto-id-input');
+        const cantidadInput = document.getElementById('cantidad-input');
+
+        const productoId = parseInt(productoIdInput.value);
+        const cantidad = parseInt(cantidadInput.value);
+
+        if (isNaN(productoId) || productoId <= 0 || isNaN(cantidad) || cantidad <= 0) {
+            showMessage('ID de Producto y Cantidad deben ser números válidos y mayores a 0.', 'error');
+            return;
+        }
+
+        const detalleExistenteIndex = detallesFactura.findIndex(d => d.producto.id === productoId);
+
+        if (detalleExistenteIndex !== -1) {
+            // Si ya existe, actualiza la cantidad
+            detallesFactura[detalleExistenteIndex].cantidad += cantidad;
+            showMessage(`Cantidad de Producto ID ${productoId} actualizada.`, 'success');
+        } else {
+            // Si es nuevo, agrégalo
+            // En una aplicación real, se buscaría el nombre/precio del producto por su ID
+            const nuevoDetalle = {
+                producto: { id: productoId, nombre: `Producto N° ${productoId}` }, // Nombre temporal
+                cantidad: cantidad
+            };
+            detallesFactura.push(nuevoDetalle);
+            showMessage(`Producto ID ${productoId} añadido.`, 'success');
+        }
+
+        renderDetallesFactura();
+
+        // Limpiar inputs (opcional)
+        productoIdInput.value = '1';
+        cantidadInput.value = '1';
+    };
+
+    const eliminarDetalle = (index) => {
+        detallesFactura.splice(index, 1);
+        renderDetallesFactura();
+        showMessage('Detalle eliminado.', 'success');
+    };
+
+    const renderDetallesFactura = () => {
+        const detallesList = document.getElementById('detalles-list');
+        const placeholderDetalle = document.getElementById('placeholder-detalle');
+        const clienteIdDisplay = document.getElementById('cliente-id-display');
+
+        // Sincronizar el ID del cliente en el campo de referencia
+        if (currentCliente && clienteIdDisplay) {
+            clienteIdDisplay.value = currentCliente.id;
+        }
+
+
+        detallesList.innerHTML = '';
+        if (detallesFactura.length === 0) {
+            detallesList.innerHTML = `<p class="text-center text-gray-500" id="placeholder-detalle">Aún no hay productos en la factura.</p>`;
+            return;
+        }
+
+        detallesFactura.forEach((detalle, index) => {
+            const li = document.createElement('div');
+            li.className = 'flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200';
+            li.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="package" class="w-4 h-4 mr-2 text-teal-500"></i>
+                    <span class="text-sm">
+                        <strong>${detalle.producto.nombre || `Producto N° ${detalle.producto.id}`}</strong>
+                        <span class="text-gray-500 ml-2">(${detalle.cantidad} uds)</span>
+                    </span>
+                </div>
+                <button onclick="eliminarDetalle(${index})" class="text-red-500 hover:text-red-700 text-sm p-1 rounded-full hover:bg-red-50 transition duration-150">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            `;
+            detallesList.appendChild(li);
+        });
+        setTimeout(() => lucide.createIcons(), 0);
+    };
+
+    const crearFactura = async () => {
+        if (!currentCliente) {
+            showMessage('Primero debe consultar y validar un cliente.', 'error');
+            return;
+        }
+        if (detallesFactura.length === 0) {
+            showMessage('La factura debe tener al menos un producto.', 'error');
+            return;
+        }
+
+        const facturaData = {
+            tipoComprobante: document.getElementById('tipo-comprobante').value,
+            cliente: { id: currentCliente.id },
+            // Mapeamos los detalles para ajustarlos a la estructura esperada por Spring Boot
+            detalles: detallesFactura.map(d => ({
+                productoId: d.producto.id,
+                cantidad: d.cantidad
+            }))
+        };
+
+        const token = getToken();
+        const facturaResultadoDiv = document.getElementById('factura-resultado');
+        const createFacturaBtn = document.getElementById('create-factura-btn');
+
+        createFacturaBtn.disabled = true;
+        createFacturaBtn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Creando Comprobante...';
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/facturas`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // Requiere JWT
+                },
+                body: JSON.stringify(facturaData)
+            });
+
+            const data = await response.json();
+
+            facturaResultadoDiv.style.display = 'block';
+
+            if (response.ok) {
+                facturaResultadoDiv.className = 'mt-6 p-4 bg-green-50 border border-green-300 rounded-xl text-sm text-gray-800';
+                facturaResultadoDiv.innerHTML = `
+                    <p class="font-bold text-lg text-green-700 flex items-center"><i data-lucide="file-check-2" class="w-5 h-5 mr-2"></i> FACTURA CREADA</p>
+                    <p><strong>Comprobante N°:</strong> <span class="font-mono bg-green-200 px-1 rounded">${data.numeroComprobante}</span></p>
+                    <p><strong>Cliente:</strong> ${data.cliente.nombreRazonSocial || 'N/A'}</p>
+                    <hr class="my-2 border-gray-200">
+                    <p><strong>SUBTOTAL:</strong> S/ ${data.subtotal ? data.subtotal.toFixed(2) : '0.00'}</p>
+                    <p><strong>IGV (18%):</strong> S/ ${data.igv ? data.igv.toFixed(2) : '0.00'}</p>
+                    <p class="text-2xl font-extrabold text-blue-700">TOTAL: S/ ${data.total ? data.total.toFixed(2) : '0.00'}</p>
+                `;
+
+                // Limpieza de la interfaz después de la creación exitosa
+                detallesFactura = []; // Limpiar para nueva factura
+                currentCliente = null;
+                document.getElementById('documento-input').value = '';
+                document.getElementById('cliente-resultado').innerHTML = 'Resultado de la consulta:';
+                document.getElementById('cliente-id-display').value = 'N/A';
+                document.getElementById('facturacion-card').classList.add('opacity-50', 'pointer-events-none');
+                renderDetallesFactura();
+                showMessage('Factura creada exitosamente. ¡Revisa el resultado!', 'success');
+
+            } else if (response.status === 401 || response.status === 403) {
+                 showMessage('Token expirado. Por favor, inicia sesión de nuevo.', 'error');
+                 logout();
+            } else {
+                facturaResultadoDiv.className = 'mt-6 p-4 bg-red-50 border border-red-300 rounded-xl text-sm text-gray-800';
+                facturaResultadoDiv.innerHTML = `
+                    <p class="font-bold text-red-700">❌ ERROR AL CREAR FACTURA (Status: ${response.status})</p>
+                    <p class="mt-1">Detalle: ${data.message || (typeof data === 'string' ? data : JSON.stringify(data))}</p>
+                `;
+                showMessage('Error al crear factura. Revisa el detalle.', 'error');
+            }
+
+        } catch (error) {
+            console.error('Error de red:', error);
+            showMessage('Error de red. La aplicación Spring Boot no responde.', 'error');
+            facturaResultadoDiv.innerHTML = `<p class="font-bold text-red-700">Error: No se pudo conectar al servidor.</p>`;
+        } finally {
+            createFacturaBtn.innerHTML = '<i data-lucide="zap" class="w-5 h-5 mr-2"></i> Crear Comprobante';
+            createFacturaBtn.disabled = false;
+            setTimeout(() => lucide.createIcons(), 0);
+        }
+    };
+
+
+    // ------------------- 4. RENDERING (PINTAR VISTAS) -------------------
+
+    const renderLogin = (initialMessage = '') => {
+        APP_CONTAINER.innerHTML = `
+            <div class="main-card w-full max-w-sm mx-auto p-8 border-t-4 border-blue-600">
+                <h2 class="text-3xl font-bold mb-2 text-center text-gray-800">
+                    ¡Bienvenido!
+                </h2>
+                <p class="text-center text-gray-500 mb-8">Sistema de Gestión de Facturación</p>
+
+                <p id="message-box" class="text-center"></p>
+
+                <form id="login-form" class="space-y-6">
+                    <div>
+                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">
+                            <i data-lucide="mail" class="inline-block w-4 h-4 mr-1 text-blue-500"></i> Correo Electrónico
+                        </label>
+                        <input type="email" id="email" name="email" class="w-full p-3 border border-gray-300 rounded-xl transition duration-150" placeholder="test@login.com" value="test@login.com" required/>
+                    </div>
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">
+                            <i data-lucide="lock" class="inline-block w-4 h-4 mr-1 text-blue-500"></i> Contraseña
+                        </label>
+                        <input type="password" id="password" name="password" class="w-full p-3 border border-gray-300 rounded-xl transition duration-150" placeholder="123" value="123" required/>
+                    </div>
+
+                    <button type="submit" id="login-btn" class="w-full py-3 mt-4 text-white font-semibold rounded-xl shadow-lg transition duration-200 flex items-center justify-center bg-blue-600 hover:bg-blue-700 hover:shadow-xl">
+                        Iniciar Sesión
+                    </button>
+                </form>
+
+                <div class="mt-8 p-4 bg-gray-50 rounded-xl text-sm text-gray-600 border border-gray-200">
+                    <p class="font-bold mb-1 flex items-center"><i data-lucide="info" class="w-4 h-4 mr-2 text-blue-500"></i> Credenciales de Prueba:</p>
+                    <p><span class="font-mono bg-gray-200 text-xs px-1.5 py-0.5 rounded">Usuario:</span> test@login.com</p>
+                    <p><span class="font-mono bg-gray-200 text-xs px-1.5 py-0.5 rounded">Clave:</span> 123</p>
+                </div>
+            </div>
+        `;
+        document.getElementById('login-form').addEventListener('submit', handleLogin);
+         // Inicializa los iconos de Lucide
+        setTimeout(() => lucide.createIcons(), 0);
+    };
+
+    const renderProtectedView = () => {
+        APP_CONTAINER.innerHTML = `
+            <div class="main-card w-full mx-auto">
+                <header class="pb-4 border-b border-gray-100 mb-6 flex justify-between items-center">
+                    <h1 class="text-3xl font-extrabold text-teal-600 flex items-center">
+                        <i data-lucide="package" class="w-7 h-7 mr-3 text-teal-500"></i> ${currentView === 'facturacion' ? 'Módulo de Facturación' : 'Gestión de Productos'}
+                    </h1>
+                    <button id="logout-btn" class="text-sm text-red-500 hover:text-red-700 font-medium py-2 px-3 rounded-lg transition duration-150 border border-transparent hover:border-red-200">
+                        <i data-lucide="log-out" class="inline-block w-4 h-4 mr-1"></i> Cerrar Sesión
+                    </button>
+                </header>
+
+                <nav class="flex space-x-3 mb-8 p-2 bg-gray-100 rounded-xl shadow-inner">
+                    <button
+                        onclick="navigateTo('facturacion')"
+                        class="nav-button flex-1 flex items-center justify-center facturacion ${currentView === 'facturacion' ? 'active' : ''}"
+                    >
+                         <i data-lucide="file-text" class="w-5 h-5 mr-2"></i> Facturación
+                    </button>
+                    <button
+                        onclick="navigateTo('listProducts')"
+                        class="nav-button flex-1 flex items-center justify-center ${currentView === 'listProducts' ? 'active' : ''}"
+                    >
+                         <i data-lucide="list-ordered" class="w-5 h-5 mr-2"></i> Listar Productos
+                    </button>
+                    <!-- NUEVO BOTÓN AGREGADO AQUÍ -->
+                    <button
+                        onclick="navigateTo('createProduct')"
+                        class="nav-button flex-1 flex items-center justify-center ${currentView === 'createProduct' ? 'active' : ''}"
+                    >
+                         <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> Añadir Producto
+                    </button>
+                </nav>
+
+                <p id="message-box" class="text-center"></p>
+
+                <div id="content-view">
+                    <!-- El contenido específico de la vista se renderiza aquí -->
+                </div>
+            </div>
+        `;
+        document.getElementById('logout-btn').addEventListener('click', logout);
+
+        // Renderizar la vista actual y crear los iconos
+        setTimeout(() => lucide.createIcons(), 0);
+        switch(currentView) {
+            case 'facturacion':
+                renderFacturacionView();
+                break;
+            case 'listProducts':
+                renderListProductsView();
+                break;
+            case 'createProduct':
+                renderCreateProductView(); // Nueva función
+                break;
+            default:
+                renderFacturacionView();
+        }
+    };
+
+    const renderFacturacionView = () => {
+        const contentView = document.getElementById('content-view');
+        contentView.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Columna Izquierda: Consulta de Cliente -->
+                <div class="space-y-6">
+                    <div class="bg-blue-50 p-6 rounded-xl border border-blue-200">
+                        <h3 class="text-xl font-bold text-blue-700 mb-4 flex items-center">
+                            <i data-lucide="search" class="w-5 h-5 mr-2"></i> 1. Datos del Cliente
+                        </h3>
+                        <p class="text-sm text-gray-600 mb-4">Ingresa DNI (8 dígitos) o RUC (11 dígitos). Esto simula la consulta a RENIEC/SUNAT.</p>
+
+                        <div class="flex space-x-2">
+                            <input type="text" id="documento-input" placeholder="DNI o RUC (Ej: 11223344)" class="facturacion-card flex-grow p-3 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500" value="11223344">
+                            <button onclick="consultarCliente()" class="px-4 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition duration-150 flex items-center">
+                                <i data-lucide="user-search" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <div id="cliente-resultado" class="mt-4 p-4 bg-white rounded-lg text-sm text-gray-700 border border-gray-200">
+                            Resultado de la consulta:
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Derecha: Creación y Detalle de Factura -->
+                <div id="facturacion-card" class="facturacion-card space-y-6 opacity-50 pointer-events-none p-6 border border-gray-200 rounded-2xl bg-white shadow-inner">
+                    <h3 class="text-xl font-bold text-teal-600 mb-4 flex items-center">
+                        <i data-lucide="file-edit" class="w-5 h-5 mr-2"></i> 2. Detalle del Comprobante
+                    </h3>
+
+                    <!-- Tipo de Comprobante -->
+                    <div class="flex space-x-4">
+                        <div class="w-1/2">
+                            <label for="tipo-comprobante" class="block text-sm font-semibold text-gray-700 mb-1">Tipo</label>
+                            <select id="tipo-comprobante" class="facturacion-card mt-1 block w-full p-3 border border-gray-300 rounded-xl focus:ring-blue-500">
+                                <option value="BOLETA">Boleta</option>
+                                <option value="FACTURA">Factura</option>
+                            </select>
+                        </div>
+                        <div class="w-1/2">
+                            <label for="cliente-id-display" class="block text-sm font-semibold text-gray-700 mb-1">ID Cliente (Ref)</label>
+                            <input type="text" id="cliente-id-display" readonly value="N/A" class="facturacion-card mt-1 block w-full p-3 bg-gray-100 border border-gray-300 rounded-xl">
+                        </div>
+                    </div>
+
+                    <!-- Añadir Productos -->
+                    <h4 class="text-lg font-bold text-gray-700 pt-4 border-t mt-4 flex items-center"><i data-lucide="shopping-cart" class="w-4 h-4 mr-2"></i> Productos</h4>
+                    <p class="text-xs text-orange-600 mb-2 font-medium">Usa un ID de producto que ya exista en tu base de datos (Ej: ID 1).</p>
+                    <div class="flex space-x-2">
+                        <input type="number" id="producto-id-input" placeholder="ID Producto" value="1" class="facturacion-card w-1/3 p-3 border border-gray-300 rounded-xl">
+                        <input type="number" id="cantidad-input" placeholder="Cantidad" value="1" min="1" class="facturacion-card w-1/3 p-3 border border-gray-300 rounded-xl">
+                        <button onclick="agregarDetalle()" class="w-1/3 py-3 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition duration-150 flex items-center justify-center">
+                             Añadir
+                        </button>
+                    </div>
+
+                    <!-- Lista de Detalles -->
+                    <div id="detalles-list" class="mt-4 space-y-2 p-3 border border-dashed border-gray-300 rounded-xl bg-gray-50 max-h-40 overflow-y-auto">
+                        <!-- Los detalles de productos irán aquí -->
+                    </div>
+
+                    <!-- Botón y Resultado Final -->
+                    <button onclick="crearFactura()" id="create-factura-btn" class="w-full py-3 mt-6 text-white font-bold rounded-xl shadow-lg transition duration-200 flex items-center justify-center bg-blue-600 hover:bg-blue-700 hover:shadow-xl">
+                        <i data-lucide="zap" class="w-5 h-5 mr-2"></i> Crear Comprobante
+                    </button>
+
+                    <div id="factura-resultado" class="mt-6 p-4 rounded-xl text-sm text-gray-800 hidden">
+                        <!-- Resultado de la creación de la factura -->
+                    </div>
+                </div>
+            </div>
+        `;
+        // Inicializa el estado de la vista
+        currentCliente = null;
+        detallesFactura = [];
+        // NOTA: La línea de abajo ahora es crítica para sincronizar el ID en el display de referencia
+        document.getElementById('cliente-id-display').value = 'N/A';
+        renderDetallesFactura();
+        setTimeout(() => lucide.createIcons(), 0);
+    };
+
+    const renderListProductsView = () => {
+        const contentView = document.getElementById('content-view');
+        contentView.innerHTML = `
+            <div class="space-y-4 max-h-[500px] overflow-y-auto pr-3" id="products-list">
+                <!-- Contenido de carga inicial -->
+            </div>
+        `;
+        fetchProducts(getToken());
+    };
+
+    // FUNCIÓN NUEVA: Renderiza el formulario de creación de producto
+    const renderCreateProductView = () => {
+        const contentView = document.getElementById('content-view');
+        contentView.innerHTML = `
+            <div class="max-w-xl mx-auto main-card p-6 border-t-4 border-teal-600 shadow-xl">
+                <h3 class="text-2xl font-bold text-teal-700 mb-6 flex items-center">
+                    <i data-lucide="plus-square" class="w-6 h-6 mr-2"></i> Crear Nuevo Producto
+                </h3>
+                <p class="text-gray-600 mb-6">Ingresa la información detallada para registrar un nuevo producto en el sistema.</p>
+
+                <form id="create-product-form" class="space-y-4">
+                    <!-- Nombre del Producto -->
+                    <div>
+                        <label for="nombre" class="block text-sm font-semibold text-gray-700 mb-1">Nombre</label>
+                        <input type="text" id="nombre" name="nombre" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-teal-500" placeholder="Ej: Laptop Gamer XYZ" required>
+                    </div>
+
+                    <!-- Descripción -->
+                    <div>
+                        <label for="descripcion" class="block text-sm font-semibold text-gray-700 mb-1">Descripción</label>
+                        <textarea id="descripcion" name="descripcion" rows="3" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-teal-500" placeholder="Una breve descripción del producto..." required></textarea>
+                    </div>
+
+                    <!-- Precio y Stock -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="precio" class="block text-sm font-semibold text-gray-700 mb-1">Precio (S/)</label>
+                            <input type="number" id="precio" name="precio" step="0.01" min="0" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-teal-500" placeholder="0.00" required>
+                        </div>
+                        <div>
+                            <label for="stock" class="block text-sm font-semibold text-gray-700 mb-1">Stock Inicial</label>
+                            <input type="number" id="stock" name="stock" min="0" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-teal-500" placeholder="100" required>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="create-btn" class="w-full py-3 mt-6 text-white font-semibold rounded-xl shadow-lg transition duration-200 flex items-center justify-center bg-teal-600 hover:bg-teal-700 hover:shadow-xl">
+                        <i data-lucide="save" class="w-5 h-5 mr-2"></i> Crear Producto
+                    </button>
+                </form>
+            </div>
+        `;
+        document.getElementById('create-product-form').addEventListener('submit', handleCreateProduct);
+        setTimeout(() => lucide.createIcons(), 0);
+    };
+
+    const renderProductsList = (products, listContainer) => {
+        if (products.length === 0) {
+            listContainer.innerHTML = `
+                <div class="text-center p-12 text-gray-500 border-4 border-dashed border-gray-200 rounded-xl">
+                    <i data-lucide="box" class="w-12 h-12 mx-auto mb-4 text-gray-300"></i>
+                    <h3 class="text-xl font-semibold">No hay productos registrados</h3>
+                    <p class="mt-2">Usa la pestaña "Añadir Producto" para empezar a gestionar tu inventario.</p>
+                </div>
+            `;
+            setTimeout(() => lucide.createIcons(), 0);
+            return;
+        }
+
+        listContainer.innerHTML = products.map(product => `
+            <div class="bg-white p-4 rounded-xl shadow-md border-l-4 border-teal-500 flex justify-between items-start">
+                <div>
+                    <p class="text-lg font-bold text-gray-800">${product.nombre}</p>
+                    <p class="text-xs text-gray-500 mb-2">ID: <span class="font-mono bg-gray-100 px-1 rounded">${product.id}</span></p>
+                    <p class="text-sm text-gray-600 italic">${product.descripcion}</p>
+                </div>
+                <div class="text-right space-y-1">
+                    <p class="text-xl font-extrabold text-teal-600">S/ ${product.precio ? product.precio.toFixed(2) : '0.00'}</p>
+                    <p class="text-sm font-semibold text-orange-600">Stock: ${product.stock}</p>
+                </div>
+            </div>
+        `).join('');
+
+        setTimeout(() => lucide.createIcons(), 0);
+    };
+
+
+    // ------------------- 5. INICIALIZACIÓN -------------------
+
+    // Función para verificar el token al cargar
+    const checkAuthAndRender = () => {
+        const token = getToken();
+        if (token) {
+            renderProtectedView();
+        } else {
+            renderLogin();
+        }
+    };
+
+    // Inicia la aplicación
+    window.onload = checkAuthAndRender;
+
+</script>
+</body>
+</html>
